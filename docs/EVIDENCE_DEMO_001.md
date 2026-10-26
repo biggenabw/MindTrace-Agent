@@ -8,7 +8,9 @@
 | 字段 | 值 |
 |---|---|
 | GitHub 用户名 | `biggenabw` |
-| Git Commit SHA | `b9d8ac2`（基线提交，完整 SHA 与说明见第 8 节） |
+| 仓库地址 | https://github.com/biggenabw/MindTrace-Agent |
+| Git Commit SHA | `b9d8ac23a83d5252cbac6ff1f19eebb396141557`（基线提交，说明见第 8 节） |
+| Commit 链接 | https://github.com/biggenabw/MindTrace-Agent/commit/b9d8ac23a83d5252cbac6ff1f19eebb396141557 |
 | Demo 运行说明 | 见第 3 节，可直接复制 |
 | 运行截图 | `docs/evidence/01-home.png`、`02-feedback-a.png`、`03-teacher-view.png` |
 | 移动云状态 | 未接入（纯本地运行，无云主机、无域名、无在线 Demo URL） |
@@ -147,6 +149,8 @@ VITE v7.3.7  ready in 768 ms
 | Commit 提交时间 | 2026-10-26 14:30:12 +0800 |
 | 作者 | `biggenabw` |
 | 提交内容 | 25 个文件，2286 行新增 |
-| 远程仓库 | 待绑定（push 后回填链接） |
+| 远程仓库 | https://github.com/biggenabw/MindTrace-Agent |
+| 远程协议 | SSH over 443（`ssh://git@ssh.github.com:443/biggenabw/MindTrace-Agent.git`） |
+| 推送结果 | `main -> main`，38 objects，1.31 MiB，已建立 upstream 跟踪 |
 
 > 说明：`b9d8ac2` 为包含本文件首个版本的基线提交。由于本文件需要记录自身 SHA，SHA 回填产生的第二个提交位于其之后；请以仓库页面的提交列表为准，两者均指向同一份 Demo 证据。
