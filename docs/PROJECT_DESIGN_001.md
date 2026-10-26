@@ -473,9 +473,19 @@ npm test
 | 存储键 | `mindtrace-demo-evidence-v1` | `mindtrace-skew-evidence-v1` |
 | 测试 | 2 条 | 11 条 |
 
-### 15.6 尚未完成（如实记录）
+### 15.6 提交记录
+
+| 项 | 值 |
+|---|---|
+| 功能提交（本次） | `fa7bbed`，含全部代码、四张截图、方案文档与 README 更新，13 个文件 +1242 行 |
+| 清理提交 | `8e2e39a`，移除误入版本库的零字节日志文件 |
+| 基线提交 | `b9d8ac2`（教师模板原貌） |
+| 远程仓库 | https://github.com/biggenabw/MindTrace-Agent |
+| 差异范围 | `b9d8ac2..fa7bbed` |
+
+### 15.7 尚未完成（如实记录）
 
 - D4「错因分类表外置为 JSON」未实现，`knowledgeRef` 目前是硬编码常量映射。
-- 未提交 commit，工作区改动尚未入库。
 - 未做移动端真机验证，响应式仅在 1440px 视口下截图确认。
 - 未接入任何大模型，判定模式始终为 `rule_baseline`。
+- 功能提交 `fa7bbed` 的提交信息为「更改」（在 IDE 中手动提交导致），语义不够规范，后续提交已规范为 `chore:` 前缀。
