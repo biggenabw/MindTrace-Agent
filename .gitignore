@@ -1,0 +1,30 @@
+# 依赖
+node_modules/
+
+# 构建产物
+dist/
+dist-ssr/
+.vite/
+
+# 本地环境变量与凭据（禁止提交）
+*.local
+.env
+.env.*
+
+# 编辑器
+.vscode/*
+!.vscode/extensions.json
+.idea/
+
+# 系统文件
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# npm 调试日志（docs/evidence 下的证据日志需保留，故不忽略 *.log）
+npm-debug.log*
+*-debug.log*
+
+# 临时文件
+*.tmp
+*.bak
