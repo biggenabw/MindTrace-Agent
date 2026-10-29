@@ -1,35 +1,55 @@
+/**
+ * 编排层：把贝叶斯模型、训练集与证据存储组装成页面可用的接口。
+ *
+ * 判定不再由规则决定，而由 trainingData 中的标注样本训练出的模型给出。
+ * 想改变判定行为，请改标注，而不是改这里的代码。
+ */
+import {
+  CLASSES,
+  CLASS_MEANING,
+  leaveOneOut,
+  predict,
+  train,
+  type ClassLabel,
+  type Contribution,
+  type EvaluationResult,
+  type Model,
+  type Variant,
+} from './naiveBayes'
+import { TRAINING_SET, CLASS_RATIONALE } from './trainingData'
+
 export type StudentId = 'A' | 'B'
 
-/** 诊断维度：概念 / 证据 / 行动 / 验证 */
-export type Dimension = 'concept' | 'evidence' | 'action' | 'verification'
-
-/** 诊断档位：1 未识别 → 4 命名原因且给出可验证改进 */
-export type Level = 1 | 2 | 3 | 4
-
-/** 命中的原文片段，start/end 为在原回答中的 UTF-16 下标 */
-export type EvidenceSpan = {
-  dimension: Dimension
-  matched: string
-  start: number
-  end: number
-}
+/** 平滑系数与变体：由实验确定（见 docs 中的评估记录） */
+export const ALPHA = 0.05
+export const VARIANT: Variant = 'bernoulli'
+/**
+ * 温度缩放系数：用留一交叉验证的 log loss 选出。
+ * T=1 时 logloss 0.814（softmax 饱和，显示为 0% / 100%），T=5 时降到 0.583，准确率不变。
+ */
+export const TEMPERATURE = 5
 
 export type EvidenceRecord = {
   id: string
   student: StudentId
   answer: string
-  diagnosis: string
-  level: Level
+  /** 四类概率，和为 1 */
+  probabilities: Record<ClassLabel, number>
+  topClass: ClassLabel
+  confidence: number
+  margin: number
+  contributions: Contribution[]
   feedback: string
-  evidenceSpans: EvidenceSpan[]
-  knowledgeRef: string
+  /** 训练时记录的留一准确率，随每条记录一起留痕 */
+  modelAccuracy: number
+  sampleCount: number
   source: 'current_local_session'
-  mode: 'rule_baseline'
+  mode: 'naive_bayes_v1'
   createdAt: string
 }
 
-/** 与模板 key 区分，避免读到模板遗留数据 */
-const KEY = 'mindtrace-skew-evidence-v1'
+/** 与模板 key 区分，避免读到旧方案遗留数据 */
+const KEY = 'mindtrace-bayes-evidence-v1'
 
 /** CASE 002：类别不平衡 / 准确率悖论 */
 export const prompt =
@@ -46,145 +66,63 @@ export const caseMeta = {
   ],
 } as const
 
-/** 四维词表：按维度归类，命中即产出 EvidenceSpan */
-const DIMENSION_TERMS: Record<Dimension, string[]> = {
-  concept: [
-    '类别不平衡',
-    '数据不平衡',
-    '样本不平衡',
-    '不平衡',
-    '样本比例',
-    '少数类',
-    '多数类',
-    '准确率悖论',
-    'accuracy paradox',
-    '长尾',
-    '偏斜',
-    'imbalance',
-  ],
-  evidence: [
-    '准确率',
-    '召回',
-    'recall',
-    '精确率',
-    'precision',
-    '整体表现',
-    '识别出',
-    '没抓到',
-    '漏掉',
-    '99',
-    '99.2',
-    '8%',
-  ],
-  action: ['重采样', '过采样', '欠采样', '类别权重', 'class weight', '加权', 'smote', '阈值', '换指标', '代价敏感'],
-  verification: ['pr-auc', 'pr 曲线', 'pr曲线', '分层', '交叉验证', '混淆矩阵', '单独评估', '召回率', 'f1', 'auc'],
+export { CLASSES, CLASS_MEANING, CLASS_RATIONALE }
+export type { ClassLabel, Contribution, EvaluationResult }
+
+/** 全局模型：模块加载时训练一次 */
+const MODEL: Model = train(TRAINING_SET, ALPHA, VARIANT)
+
+/** 留一评估结果：也只需算一次 */
+let cachedEval: EvaluationResult | null = null
+
+export function evaluation(): EvaluationResult {
+  if (!cachedEval) cachedEval = leaveOneOut(TRAINING_SET, ALPHA, VARIANT)
+  return cachedEval
 }
 
-const NEGATION = /[不非没无未]/
-const TURN = /但|不过|然而|其实/
-
-/** 命中词前 8 个字符内出现否定词且无转折词，视为否定用法 */
-function isNegated(text: string, index: number): boolean {
-  const window = text.slice(Math.max(0, index - 8), index)
-  if (!NEGATION.test(window)) return false
-  return !TURN.test(window)
-}
-
-function collectSpans(text: string, dimension: Dimension): EvidenceSpan[] {
-  const spans: EvidenceSpan[] = []
-  const lower = text.toLowerCase()
-  for (const term of DIMENSION_TERMS[dimension]) {
-    const needle = term.toLowerCase()
-    let from = 0
-    for (;;) {
-      const hit = lower.indexOf(needle, from)
-      if (hit === -1) break
-      from = hit + needle.length
-      if (isNegated(text, hit)) continue
-      spans.push({
-        dimension,
-        matched: text.slice(hit, hit + needle.length),
-        start: hit,
-        end: hit + needle.length,
-      })
-    }
+export function modelInfo() {
+  return {
+    variant: VARIANT,
+    alpha: ALPHA,
+    temperature: TEMPERATURE,
+    sampleCount: TRAINING_SET.length,
+    vocabSize: MODEL.vocab.size,
+    accuracy: evaluation().accuracy,
   }
-  // 同一维度内去重：位置完全相同的只留一条
-  const seen = new Set<string>()
-  const unique = spans.filter(s => {
-    const k = `${s.start}:${s.end}`
-    if (seen.has(k)) return false
-    seen.add(k)
-    return true
-  })
-  // 去掉被同维度更长片段完全包含的短片段（如「不平衡」被「类别不平衡」包含、「99」被「99.2」包含）
-  const kept = unique.filter(s =>
-    !unique.some(
-      o =>
-        o !== s &&
-        o.dimension === s.dimension &&
-        o.end - o.start > s.end - s.start &&
-        o.start <= s.start &&
-        o.end >= s.end,
-    ),
-  )
-  return kept.sort((a, b) => a.start - b.start)
 }
 
-const DIAGNOSIS: Record<Level, string> = {
-  1: '尚未识别多数类与少数类的表现差异',
-  2: '已注意到整体准确率掩盖了少数类失效',
-  3: '已识别类别不平衡问题',
-  4: '已识别原因并给出可验证的改进方案',
+const FEEDBACK: Record<ClassLabel, string> = {
+  L1: '你的回答还没有指向具体现象。先看两个数字：整体准确率 99.2%，欺诈召回只有 8%。如果模型把每一笔都判为正常，准确率会是多少？这说明这个指标在这里是否可信？',
+  L2: '你指出了指标之间的反常，但还没有命名它。当样本比例是 99:1 时，模型只要偏向多数类就能拿到很高的准确率——这个现象在机器学习里叫什么？',
+  L3: '你已经命名了原因，但还没有可执行的改进。请至少给出一项训练侧改动（重采样或类别权重），并说明用哪个指标验证效果。',
+  L4: '你既命名了原因，也给出了改进与验证方式。下一步请说明如何在少数类上单独报告结果，以及改进前后的对比口径。',
 }
 
-const FEEDBACK: Record<Level, string> = {
-  1: '先比较两个数字：整体准确率 99.2%，欺诈召回只有 8%。若模型把每一笔都判为正常，准确率会是多少？这说明准确率这个指标在这里是否可信？',
-  2: '你发现了少数类没被识别出来。请进一步命名这个现象——样本比例 99:1 时会发生什么，以及你会换用什么指标来衡量它。',
-  3: '你已识别出类别不平衡，但还缺可执行的改进与验证方式。请至少给出一项训练侧改动（重采样或类别权重），并说明用哪个指标验证效果。',
-  4: '你既命名了原因，也给出了改进与验证思路。下一步请在少数类上单独报告召回与 PR-AUC，并说明改进前后的对比方式。',
-}
-
-const KNOWLEDGE_REF: Record<Level, string> = {
-  1: 'MC-IMB-00',
-  2: 'MC-IMB-01',
-  3: 'MC-IMB-02',
-  4: 'MC-IMB-03',
-}
+/** 概率接近时追加提示，避免把「勉强判对」当成确定结论 */
+const LOW_MARGIN_HINT = '（本次最高概率与第二名差距较小，仅供参考）'
 
 export function analyse(student: StudentId, answer: string): EvidenceRecord {
   const text = answer.trim()
   if (!text) throw new Error('请先填写回答')
 
-  const conceptSpans = collectSpans(text, 'concept')
-  const evidenceSpans = collectSpans(text, 'evidence')
-  const actionSpans = collectSpans(text, 'action')
-  const verificationSpans = collectSpans(text, 'verification')
-
-  const hasConcept = conceptSpans.length > 0
-  const hasEvidence = evidenceSpans.length > 0
-  const hasPlan = actionSpans.length > 0 || verificationSpans.length > 0
-
-  let level: Level = 1
-  if (hasConcept && hasPlan) level = 4
-  else if (hasConcept) level = 3
-  else if (hasEvidence) level = 2
-
-  const spans = [...conceptSpans, ...evidenceSpans, ...actionSpans, ...verificationSpans].sort(
-    (a, b) => a.start - b.start,
-  )
+  const p = predict(MODEL, text, TEMPERATURE)
+  const ambiguous = p.margin < 0.15
+  const ev = evaluation()
 
   return {
     id: crypto.randomUUID(),
     student,
     answer: text,
-    diagnosis: DIAGNOSIS[level],
-    level,
-    feedback: FEEDBACK[level],
-    evidenceSpans: spans,
-    knowledgeRef: KNOWLEDGE_REF[level],
+    probabilities: p.probabilities,
+    topClass: p.topClass,
+    confidence: p.confidence,
+    margin: p.margin,
+    contributions: p.contributions,
+    feedback: ambiguous ? FEEDBACK[p.topClass] + LOW_MARGIN_HINT : FEEDBACK[p.topClass],
+    modelAccuracy: ev.accuracy,
+    sampleCount: TRAINING_SET.length,
     source: 'current_local_session',
-    mode: 'rule_baseline',
+    mode: 'naive_bayes_v1',
     createdAt: new Date().toISOString(),
   }
 }
@@ -206,9 +144,9 @@ export function clearEvidence() {
   localStorage.removeItem(KEY)
 }
 
-/** 教师侧：按档位统计分布 */
-export function levelDistribution(records: EvidenceRecord[]) {
-  const base = { 1: 0, 2: 0, 3: 0, 4: 0 } as Record<Level, number>
-  for (const r of records) base[r.level] += 1
+/** 教师侧：按预测类别统计分布 */
+export function classDistribution(records: EvidenceRecord[]) {
+  const base = { L1: 0, L2: 0, L3: 0, L4: 0 } as Record<ClassLabel, number>
+  for (const r of records) base[r.topClass] += 1
   return base
 }

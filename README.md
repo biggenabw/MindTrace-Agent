@@ -1,6 +1,7 @@
 # MindTrace-Agent
 
-> **当前版本：MindTrace-Skew** — 本组在教师模板 `MindTrace-Agent` 基础上的二次开发，场景由「过拟合」改为「类别不平衡」，新增四维诊断、命中原文定位与教师档位分布。方案见 `docs/PROJECT_DESIGN_001.md`。
+> **当前版本：MindTrace-Bayes** — 本组在教师模板 `MindTrace-Agent` 基础上的二次开发。
+> 判定机制由「手工关键词规则」替换为「标注样本训练的朴素贝叶斯分类器」，输出四类概率与逐特征贡献，并用留一交叉验证给出可复现的准确率。方案见 `docs/PROJECT_DESIGN_002.md`。
 
 **学生入口（Local）**：启动后打开 `http://localhost:5173/`。**演示入口（Hosted）**：Not deployed。**GitHub URL**：[https://github.com/afountain/MindTrace-Agent](https://github.com/afountain/MindTrace-Agent)。**API接口**：无独立后端；本地 adapter 位于 `frontend/src/adapters/learning.ts`。
 
@@ -15,11 +16,12 @@ npm --prefix frontend run dev -- --host 127.0.0.1 --port 5173
 
 ## 当前状态
 
-- 默认页面：MindTrace-Skew 学习反馈证据工作区（CASE 002 信用卡欺诈检测）。
-- 已实现：A/B 演示学生回答、四维规则诊断、命中原文定位（片段 + 位置）、四档反馈、教师档位分布与本地记录。
-- 判定模式：`rule_baseline`，不调用任何大模型。
+- 默认页面：MindTrace-Bayes 学习反馈证据工作区（CASE 002 信用卡欺诈检测）。
+- 判定机制：伯努利朴素贝叶斯（32 条人工标注，α=0.05，温度缩放 5），留一交叉验证准确率 87.5%。
+- 已实现：A/B 演示学生回答、四类概率输出、逐特征贡献度、混淆矩阵、本机证据留存。
+- 判定模式：`naive_bayes_v1`，不调用任何大模型，纯前端离线运行。
 - DEMO / SAMPLE：所有输入与展示数据均为本地演示，不调用原 ProjectMind 或生产服务。
-- 待接入：真实专业算法、经许可的数据与独立部署。当前没有在线 Demo URL。
+- 待接入：真实学生标注数据、分词优化、独立部署。当前没有在线 Demo URL。
 
 ## 学生任务
 
